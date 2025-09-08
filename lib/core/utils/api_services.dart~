@@ -1,0 +1,64 @@
+
+import 'package:dio/dio.dart';
+
+
+
+class ApiServices {
+
+  final Dio _dio = Dio(BaseOptions(
+
+      baseUrl: 'https://hegfuluilgqgbcvtnymv.supabase.co/rest/v1/',
+
+      headers: {
+
+        "apikey":
+
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6bXF2ZG5ldHFqbGJiZGdjcWRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgzNjg4NjgsImV4cCI6MjA2Mzk0NDg2OH0.4ncAAOZiURsN71Q-9uCWTfMJnDl9bZiFWf_RHyR373Y",
+
+      }));
+
+  Future<Response> getData({required String path}) async {
+
+    return await _dio.get(path);
+
+  }
+
+  Future<Response> deleteData({required String path}) async {
+
+    return await _dio.delete(path);
+
+  }
+
+
+
+  Future<Response> postData(
+
+      {required String path, required Map<String, dynamic> data}) async {
+
+    return await _dio.post(
+
+      path,
+
+      data: data,
+
+    );
+
+  }
+
+
+
+  Future<Response>
+
+
+
+  patchData(
+
+      {required String path, required Map<String, dynamic> data}) async {
+
+    return await _dio.patch(path, data: data);
+
+  }
+
+}
+
+

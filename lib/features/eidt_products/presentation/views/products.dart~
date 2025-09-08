@@ -1,0 +1,223 @@
+
+
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:store_dash_board/features/eidt_products/presentation/views/widgets/filter_and_sort_products.dart';
+import 'package:store_dash_board/features/eidt_products/presentation/views/widgets/header.dart';
+import 'package:store_dash_board/features/eidt_products/presentation/views/widgets/products_list.dart';
+import 'package:store_dash_board/features/eidt_products/presentation/views/widgets/show_more_menu.dart';
+import 'package:store_dash_board/features/eidt_products/presentation/views/widgets/show_products_filter_dialog.dart';
+
+import '../manger/product_cubit/product_cubit.dart';
+
+
+class ProductsView extends StatefulWidget {
+  const ProductsView({super.key});
+
+  @override
+  State<ProductsView> createState() => _ProductsViewState();
+}
+
+class _ProductsViewState extends State<ProductsView> {
+  String searchQuery = '';
+  String? selectedCategory;
+  String? selectedStore;
+  bool? isShowFilter;
+  String sortBy = 'date_desc';
+
+  @override
+  void initState() {
+    super.initState();
+    context.read<ProductCubit>().getProducts();
+  }
+
+  int selected = -1;
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Card(
+        color: Theme.of(context).cardColor,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+
+              Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.secondary.withOpacity(0.22),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.all(4),
+                      child: BlocBuilder<ProductCubit, ProductState>(
+                        builder: (context, state) {
+                          int allCount = 0;
+                          int activeCount = 0;
+                          int outOfStockCount = 0;
+                          int inactiveCount = 0;
+
+                          if (state is GetProductsSuccess) {
+                            allCount = state.products.length;
+
+                            // المنتجات اللي ظاهرة (isShow == true) وكمان مخزونها > 0
+                            activeCount = state.products
+                                .where((product) => product.isShow && product.quantity > 0)
+                                .length;
+
+                            // المنتجات اللي خلصت (quantity == 0)
+                            outOfStockCount = state.products
+                                .where((product) => product.quantity == 0)
+                                .length;
+
+                            // المنتجات المتوقفة (isShow == false)
+                            inactiveCount = state.products
+                                .where((product) => !product.isShow)
+                                .length;
+                          }
+
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              Expanded(
+                                child: BuildOrderStatus(
+                                  title: "All Products",
+                                  count: allCount,
+                                  isSelected: selected == -1,
+                                  onTap: () => setState(() => selected = -1),
+                                ),
+                              ),
+                              Expanded(
+                                child: BuildOrderStatus(
+                                  title: "Active",
+                                  count: activeCount,
+                                  isSelected: selected == 1,
+                                  onTap: () => setState(() => selected = 1),
+                                ),
+                              ),
+
+                              Expanded(
+                                child: BuildOrderStatus(
+                                  title: "Inactive",
+                                  count: inactiveCount,
+                                  isSelected: selected == 0,
+                                  onTap: () => setState(() => selected = 0),
+                                ),
+                              ),
+                              Expanded(
+                                child: BuildOrderStatus(
+                                  title: "Out of Stock",
+                                  count: outOfStockCount,
+                                  isSelected: selected == 2,
+                                  onTap: () => setState(() => selected = 2),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  BuildActionButton(
+                    icon: Icons.filter_list,
+                    onPressed: () {
+                      showProductsFilterDialog(context, isShowFilter, (value) {
+                        setState(() {
+                          isShowFilter = value;
+                        });
+                      });
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  BuildActionButton(
+                    icon: Icons.swap_vert,
+                    onPressed: () =>
+                        showProductSortDialog(context, sortBy, (value) {
+                          setState(() {
+                            sortBy = value;
+                          });
+                        }),
+                  ),
+                  const SizedBox(width: 8),
+                  BuildActionButton(
+                    icon: Icons.more_horiz,
+                    onPressed: () => showMoreMenuProducts(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+
+              // Search Field
+              TextField(
+                decoration: InputDecoration(
+                  hintText: 'Search products...',
+                  prefixIcon: const Icon(Icons.search),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onChanged: (value) {
+                  setState(() {
+                    searchQuery = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 24),
+              ProductHeader(),
+              const SizedBox(height: 24),
+
+              // Products List
+              Expanded(
+                child: BlocBuilder<ProductCubit, ProductState>(
+                  builder: (context, state) {
+                    if (state is GetProductsLoading) {
+                      return const Center(
+                          child: CircularProgressIndicator());
+                    } else if (state is GetProductsError) {
+                      return Center(
+                          child: Text('Error: ${state.errorMessage}'));
+                    }else if (state is GetProductsSuccess) {
+                      // فلترة المنتجات العادية (بحث / كاتيجوري / ستور / isShow / sort)
+                      var products = filterAndSortProducts(
+                        state.products,
+                        searchQuery,
+                        categoryId: selectedCategory,
+                        storeId: selectedStore,
+                        isShowFilter: isShowFilter,
+                        sortBy: sortBy,
+                      );
+
+                      // هنا نطبق فلترة حسب الزرار اللي متعلم عليه (selected)
+                      if (selected == 1) {
+                        // Active
+                        products = products.where((p) => p.isShow && p.quantity > 0).toList();
+                      } else if (selected == 0) {
+                        // Inactive
+                        products = products.where((p) => !p.isShow).toList();
+                      } else if (selected == 2) {
+                        // Out of Stock
+                        products = products.where((p) => p.quantity == 0).toList();
+                      }
+                      // لو selected == -1 هيعرض الكل زي ما هو
+
+                      if (products.isEmpty) {
+                        return const Center(child: Text('No products found.'));
+                      }
+
+                      return ProductsList(products: products);
+                    }
+
+
+                    return const Center(
+                        child: Text('No products available.'));
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

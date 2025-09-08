@@ -1,0 +1,103 @@
+import 'dart:developer';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:bloc/bloc.dart';
+import 'package:meta/meta.dart';
+
+import '../../../../add_product/data/models/category/category_model.dart';
+import '../../../../add_product/data/models/store/store_model.dart';
+import '../../../data/models/product/product_model.dart';
+import '../../../data/repos/products_repo.dart';
+
+part 'product_state.dart';
+
+class ProductCubit extends Cubit<ProductState> {
+  final ProductsRepo repo;
+  ProductCubit(this.repo) : super(ProductInitial());
+  Future<void>getProducts()async{
+    emit(GetProductsLoading());
+    final result =await repo.getProducts();
+
+    result.fold((l) {
+      emit(GetProductsError(l.errMessage));
+    }, (r) {emit(GetProductsSuccess(r));},);
+  }
+  Future <void>deleteProduct(String id,String deleteImageUrl)async{
+    emit(GetProductsLoading());
+    final result =await repo.deleteProduct(id,deleteImageUrl);
+    await getProducts();
+    result.fold((l) {
+      emit(GetProductsError(l.errMessage));
+    }, (r) async {await getProducts();},);
+  }
+  Future<void>updateVisibility(String id,bool isVisible)async{
+    emit(GetProductsLoading());
+    final result =await repo.updateVisibility(id,isVisible);
+    await getProducts();
+    result.fold((l) {
+      emit(GetProductsError(l.errMessage));
+    }, (r) async {await getProducts();},);
+  }
+  List<CategoryModel> categoriesItems = [];
+  List<StoreModel> storesItems = [];
+
+  Future<void> getCategories() async {
+    emit(GetCategoriesLoading());
+    final failureOrCategories = await repo.getCategoriesAndStores();
+    emit(failureOrCategories.fold((failure) {
+      log('failure in getCategories $failure');
+      return GetCategoriesError(message: failure.errMessage);
+    }, (success) {
+      categoriesItems = success.$1;
+      storesItems = success.$2;
+      return GetCategoriesSuccess();
+    }));
+  }
+  Future<void> updateProduct({
+    File? imageFile,
+    Uint8List? pickedImageBytes,
+    required String product_id,
+    required String store_id,
+    required String category_id,
+    required double price,
+    required int quantity,
+    required String? image_url,
+    required String english_name,
+    required String english_description,
+    required String arabic_description,
+    required String arabic_name,
+    required double old_price,
+    required String? delete_image_url,
+    required bool is_show,
+    required double weight,
+  })async{
+    emit(UpdateProductLoading());
+
+     final result = await repo.updateProduct(
+      imageFile: imageFile,
+      pickedImageBytes: pickedImageBytes,
+      product_id: product_id,
+      store_id: store_id,
+      category_id: category_id,
+      price: price,
+      quantity: quantity,
+      image_url: image_url,
+      english_name: english_name,
+      english_description: english_description,
+      arabic_description: arabic_description,
+      arabic_name: arabic_name,
+      old_price: old_price,
+      delete_image_url: delete_image_url,
+      is_show: is_show,
+      weight: weight,
+    );
+
+    result.fold((l) {
+      emit(UpdateProductError(message:l.errMessage));
+    }, (r) {
+      emit(UpdateProductSuccess());
+    },);
+
+  }
+}

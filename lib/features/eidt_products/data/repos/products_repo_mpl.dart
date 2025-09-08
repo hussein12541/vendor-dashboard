@@ -1,0 +1,201 @@
+import 'dart:developer';
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:dartz/dartz.dart';
+import 'package:dio/dio.dart';
+import 'package:store_dash_board/features/eidt_products/data/repos/products_repo.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide MultipartFile;
+import 'package:uuid/uuid.dart';
+import '../../../../core/errors/failures.dart';
+import '../../../../core/utils/api_services.dart';
+import '../../../add_product/data/models/category/category_model.dart';
+import '../../../add_product/data/models/store/store_model.dart';
+import '../models/product/product_model.dart';
+
+class ProductsRepoMpl  implements ProductsRepo{
+  ApiServices _api = ApiServices();
+  @override
+  Future<Either<Failure, List<ProductModel>>> getProducts() async {
+    try {
+      List<ProductModel> products = [];
+      Response response =await  _api.getData(path: 'products?store_id=eq.${Supabase.instance.client.auth.currentUser?.id}');
+      for (var item in response.data) {
+        products.add(ProductModel.fromJson(item));
+      }
+      return Right(products);
+    } on Exception catch (e) {
+      // TODO
+      log("getProducts error:"+e.toString());
+      return Left(ServerFailure(e.toString()));
+    }
+
+  }
+
+  @override
+  Future<Either<Failure, bool>> deleteProduct(String id,String? deleteImageUrl) async {
+    try {
+      if (deleteImageUrl!=null) {
+        await Supabase.instance.client.storage.from('products_image').remove([deleteImageUrl]);
+      }
+
+      await _api.deleteData(path: 'products?id=eq.$id');
+      return const Right(true);
+    } on Exception catch (e) {
+      log("deleteProduct error:"+e.toString());
+      return Left(ServerFailure(e.toString()));
+    }
+  }
+  @override
+
+  Future<Either<Failure,bool>> updateVisibility(String id,bool isShow)async{
+    try {
+      await _api.patchData(path: 'products?id=eq.$id',data: {'is_show':!isShow});
+      return const Right(true);
+    } on Exception catch (e) {
+      log("updateVisibility error:"+e.toString());
+      return Left(ServerFailure(e.toString()));
+    }
+  }
+  @override
+  Future<Either<Failure, List<CategoryModel> >> getCategoriesAndStores() async {
+    try {
+      // جلب الفئات
+      Response categoriesResponse = await _api.getData(path: 'categories');
+      List<CategoryModel> categories = [];
+      for (var item in categoriesResponse.data) {
+        categories.add(CategoryModel.fromJson(item));
+      }
+
+
+      return Right(categories,);
+    } on Exception catch (e) {
+      log(e.toString());
+      return Left(ServerFailure(e.toString()));
+    }
+  }
+  final SupabaseClient supabase = Supabase.instance.client;
+
+  @override
+  Future<Either<Failure,bool>> updateProduct({
+    File? imageFile,
+    Uint8List? pickedImageBytes,
+    required String product_id,
+    required String store_id,
+    required String category_id,
+    required double price,
+    required int quantity,
+    required String? image_url,
+    required String english_name,
+    required String english_description,
+    required String arabic_description,
+    required String arabic_name,
+    required double old_price,
+    required String? delete_image_url,
+    required bool is_show,
+    required double weight,
+})async{
+    try {
+      String finalImageUrl = image_url ?? '';
+      String finalDeleteImageUrl = delete_image_url ?? '';
+
+      if ((imageFile != null || pickedImageBytes != null)) {
+
+        if (delete_image_url!=null) {
+          await Supabase.instance.client.storage.from('products_image').remove([delete_image_url]);
+        }
+        final uploadResult = await uploadImage(
+          fileName: const Uuid().v4()+".png",
+          bucketName: 'products_image',
+          imageFile: imageFile,
+          webImageBytes: pickedImageBytes,
+        );
+
+        if (uploadResult.isLeft()) {
+          return Left(uploadResult.fold((l) {
+            log(l.errMessage);
+            return l;
+          }, (r) => ServerFailure('فشل رفع الصورة')));
+        }
+
+
+
+        final (uploadedUrl, deletePath) = uploadResult.getOrElse(() => ('', ''));
+        finalImageUrl = uploadedUrl;
+        finalDeleteImageUrl = deletePath;
+      }
+
+      await _api.patchData(
+        path: 'products?id=eq.$product_id',
+        data: {
+          'category_id': category_id,
+          'price': price,
+          'quantity': quantity,
+          'image_url': finalImageUrl,
+          'english_name': english_name,
+          'english_description': english_description,
+          'arabic_description': arabic_description,
+          'arabic_name': arabic_name,
+          'old_price': old_price,
+          'delete_image_url': finalDeleteImageUrl,
+          'is_show': is_show,
+          'weight': weight,
+          'store_id': store_id,
+        },
+      );
+
+      return Right(true);
+    } on Exception catch (e) {
+      log("updateProduct error:"+e.toString());
+      return Left(ServerFailure(e.toString()));
+    }
+  }
+
+  Future<Either<Failure, (String, String)>> uploadImage({
+    required String fileName,
+    File? imageFile,
+    Uint8List? webImageBytes,
+    required String bucketName
+  }) async {
+    try {
+      final uniqueName = fileName;
+
+      if (kIsWeb) {
+        const String storageBaseUrl =
+            'https://hegfuluilgqgbcvtnymv.supabase.co/storage/v1/object';
+        const String apiKey =
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlZ2Z1bHVpbGdxZ2JjdnRueW12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5NjY4MTAsImV4cCI6MjA2OTU0MjgxMH0.1_zZ2sKOW0FKobr9V8FwAfq2kaqF6CdiQS42PU71HfM';
+        final String uploadUrl = "$storageBaseUrl/$bucketName/$fileName";
+        final dio = Dio();
+        Response response = await dio.post(
+          data: FormData.fromMap({
+            "file": MultipartFile.fromBytes(webImageBytes!, filename: fileName),
+          }),
+          uploadUrl,
+          options: Options(
+            headers: {
+              "apikey": apiKey,
+              "authorization": apiKey,
+              "Content-Type": 'multipart/form-data',
+            },
+          ),
+        );
+        log(response.data["Key"]);
+
+        return Right((uploadUrl, uniqueName));
+      } else {
+        // موبايل/ديسكتوب
+        await supabase.storage.from('products_image').upload(uniqueName, imageFile!);
+
+        final publicUrl =
+        supabase.storage.from('products_image').getPublicUrl(uniqueName);
+
+        return Right((publicUrl, uniqueName));
+      }
+    } catch (e) {
+      return Left(ServerFailure(e.toString()));
+    }
+  }
+
+
+}
